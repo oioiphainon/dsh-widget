@@ -24,6 +24,7 @@ param(
     [string]$TextPath = '',
     [string]$SelfTest = '',
     [int]$ExitAfterMs = 0,
+    [int]$HideAfterMs = 0,
     [string]$AutostartTest = ''
 )
 
@@ -220,6 +221,7 @@ if (-not $DataDir) { $DataDir = Join-Path $env:LOCALAPPDATA 'dsh-fat-fish' }
 if (-not $StatePath) { $StatePath = Join-Path $DataDir 'state.json' }
 $script:ConfigPath = Join-Path $DataDir 'widget.json'
 $script:PidPath = Join-Path $DataDir 'widget.pid'
+$script:ShowPath = Join-Path $DataDir 'show-request'
 $script:DataDir = $DataDir
 
 # ----------------------------------------------------------------- strings ---
@@ -230,7 +232,18 @@ if (-not $script:Sep) { $script:Sep = ' / ' }
 
 # -------------------------------------------------------------- single app ---
 $script:Mutex = New-Object System.Threading.Mutex($false, 'Local\DshFatFishDesktopWidget')
-if (-not $SelfTest -and -not $AutostartTest -and -not $script:Mutex.WaitOne(0)) { exit 0 }
+if (-not $SelfTest -and -not $AutostartTest) {
+    if (-not $script:Mutex.WaitOne(0)) {
+        # Another fish is already alive - it may be hidden (right-click -> hide).
+        # Leave a request file instead of silently doing nothing, so launching the
+        # widget again (desktop\launch-widget.vbs) brings the hidden fish back.
+        try {
+            if (-not (Test-Path -LiteralPath $script:DataDir)) { New-Item -ItemType Directory -Path $script:DataDir -Force | Out-Null }
+            [System.IO.File]::WriteAllText($script:ShowPath, '1')
+        } catch { }
+        exit 0
+    }
+}
 
 foreach ($dir in @($DataDir, (Split-Path -Parent $StatePath))) {
     if ($dir) {
@@ -296,6 +309,7 @@ $script:ScaleIndex = 1
 $script:ScaleFactors = @(0.86, 1.0, 1.16)
 $script:KeepAfterExit = $true
 $script:SawFresh = $false
+$script:Hidden = $false
 $script:State = $null
 $script:LastStateRaw = ''
 $script:LastPoll = 0
@@ -325,6 +339,24 @@ $script:DefY = 120
 
 function Get-MascotSize { return [int]([Math]::Round(112 * $script:ScaleFactors[$script:ScaleIndex] * $script:Dpi)) }
 
+function Limit-Point([int]$x, [int]$y) {
+    # A saved position can end up outside the desktop: monitor unplugged,
+    # resolution changed, or a drag parked the card on a corner. Keep at least
+    # 60 px of the card reachable, otherwise the fish is invisible with no way
+    # to right-click it back (that is how it "disappears").
+    $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+    $keep = [int](60 * $script:Dpi)
+    $w = [int]$script:WinW
+    if ($w -le 0) { $w = $keep * 4 }
+    $loX = [int]($vs.Left - $w + $keep)
+    $hiX = [int]($vs.Right - $keep)
+    if ($hiX -lt $loX) { $hiX = $loX }
+    $loY = [int]$vs.Top
+    $hiY = [int]($vs.Bottom - $keep)
+    if ($hiY -lt $loY) { $hiY = $loY }
+    return @([int][Math]::Max($loX, [Math]::Min($hiX, $x)), [int][Math]::Max($loY, [Math]::Min($hiY, $y)))
+}
+
 function Get-DefaultPos {
     $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $m = Get-MascotSize
@@ -349,13 +381,19 @@ function Read-Config {
             if ($cfg.keepAfterExit -ne $null) { $script:KeepAfterExit = [bool]$cfg.keepAfterExit }
         } catch { }
     }
+    $pt = Limit-Point ([int]$script:DefX) ([int]$script:DefY)
+    $script:DefX = [int]$pt[0]
+    $script:DefY = [int]$pt[1]
 }
 
 function Save-Config {
     try {
+        # Never persist an off-screen position: it would come back as an
+        # invisible fish on the next start.
+        $pt = Limit-Point ([int]$script:Form.Left) ([int]$script:Form.Top)
         $obj = [ordered]@{
-            x             = $script:Form.Left
-            y             = $script:Form.Top
+            x             = [int]$pt[0]
+            y             = [int]$pt[1]
             expanded      = $script:Expanded
             scale         = $script:ScaleIndex
             alertSound    = $script:AlertSound
@@ -488,7 +526,8 @@ function Poll-State {
     foreach ($id in $ids) {
         if (-not ($script:AlertIds -contains $id)) { $fresh = $true }
     }
-    if ($fresh -and $script:AlertSound) {
+    # A hidden fish stays quiet: no alert sound while it is out of the way.
+    if ($fresh -and $script:AlertSound -and -not $script:Hidden) {
         try { [System.Media.SystemSounds]::Exclamation.Play() } catch { }
     }
     if (($ids -join ',') -ne ($script:AlertIds -join ',')) { $script:NeedsRender = $true }
@@ -1069,11 +1108,13 @@ function Render-Frame {
 
     if ($targetH -ne $script:WinH) {
         $script:WinH = [int]$targetH
-        # keep the whole card on the working area; expanding near the top must not
-        # push the panel off-screen, expanding near the bottom grows upwards.
-        $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+        # Keep the whole card on the desktop; expanding near the top must not push
+        # the panel off-screen, expanding near the bottom grows upwards. Use the
+        # virtual screen (all monitors), not just the primary one.
+        $wa = [System.Windows.Forms.SystemInformation]::VirtualScreen
         $nx = [int][Math]::Max($wa.Left, [Math]::Min($wa.Right - $script:WinW, $script:Form.Left))
         $ny = [int][Math]::Max($wa.Top, [Math]::Min($wa.Bottom - $script:WinH, $script:Form.Top))
+        if ($wa.Bottom - $script:WinH -lt $wa.Top) { $ny = [int]$wa.Top }
         # size + position together: a separate Size then Left/Top produces two
         # WM_WINDOWPOSCHANGED rounds and a visible flash when the card grows.
         $script:Form.MoveResize($nx, $ny, [int]$script:WinW, [int]$script:WinH)
@@ -1136,6 +1177,8 @@ $script:MiAutostart = New-Object System.Windows.Forms.ToolStripMenuItem
 [void]$script:Menu.Items.Add($script:MiAutostart)
 $script:MiKeep = New-Object System.Windows.Forms.ToolStripMenuItem
 [void]$script:Menu.Items.Add($script:MiKeep)
+$script:MiHide = New-Object System.Windows.Forms.ToolStripMenuItem
+[void]$script:Menu.Items.Add($script:MiHide)
 $script:MiReset = $script:Menu.Items.Add('')
 [void]$script:Menu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
 $script:MiQuit = $script:Menu.Items.Add('')
@@ -1155,6 +1198,7 @@ function Update-MenuText {
     $script:MiAutostart.Checked = (Test-Autostart)
     $script:MiKeep.Text = [string]$script:S.labels.keepRunning
     $script:MiKeep.Checked = [bool]$script:KeepAfterExit
+    $script:MiHide.Text = [string]$script:S.labels.hide
     $script:MiReset.Text = [string]$script:S.labels.reset
     $script:MiQuit.Text = [string]$script:S.labels.quit
 }
@@ -1162,6 +1206,24 @@ function Update-MenuText {
 function Set-Expanded([bool]$value) {
     $script:Expanded = $value
     $script:PendingSave = $true
+}
+
+function Hide-Widget {
+    # Runtime-only: the fish goes out of the way, but the process stays alive and
+    # keeps polling, so the next launch request brings it straight back. Hiding is
+    # deliberately not persisted - a hidden fish at the next login would look dead.
+    $script:Hidden = $true
+    try { $script:Form.Hide() } catch { }
+}
+
+function Show-Widget {
+    if (-not $script:Hidden) { return }
+    $script:Hidden = $false
+    try {
+        $script:Form.Show()
+        $script:Form.TopMost = $true
+    } catch { }
+    $script:NeedsRender = $true
 }
 
 Update-MenuText
@@ -1188,6 +1250,7 @@ $script:MiKeep.Add_Click({
         $script:KeepAfterExit = -not $script:KeepAfterExit
         Save-Config
     })
+$script:MiHide.Add_Click({ param($s, $e) Hide-Widget })
 $script:MiReset.Add_Click({
         param($s, $e)
         Get-DefaultPos
@@ -1298,10 +1361,14 @@ if ($SelfTest) {
 
 # -------------------------------------------------------------------- loop ---
 $script:StatusInfo = Get-StatusInfo
-$script:Form.Show()
-Render-Frame
+if (-not $script:Hidden) {
+    $script:Form.Show()
+    Render-Frame
+}
 $exitAt = 0
 if ($ExitAfterMs -gt 0) { $exitAt = [Environment]::TickCount + $ExitAfterMs }
+$hideAt = 0
+if ($HideAfterMs -gt 0) { $hideAt = [Environment]::TickCount + $HideAfterMs }
 
 while ($script:Running) {
     [System.Windows.Forms.Application]::DoEvents()
@@ -1310,6 +1377,15 @@ while ($script:Running) {
         Poll-State
         $script:LastPoll = $nowTick
         $script:StatusInfo = Get-StatusInfo
+        # A second launcher (desktop\launch-widget.vbs, or the Host relaunching
+        # the widget) drops a request file when it cannot take the mutex; that is
+        # how a hidden fish is asked to come back.
+        try {
+            if (Test-Path -LiteralPath $script:ShowPath) {
+                Remove-Item -LiteralPath $script:ShowPath -Force
+                Show-Widget
+            }
+        } catch { }
         # Honour the "keep the fish after DSH quits" choice, but only once this
         # run has actually seen a live Host: a widget started at login (autostart)
         # must wait for DSH instead of quitting on a stale snapshot.
@@ -1321,7 +1397,10 @@ while ($script:Running) {
     }
     $frameInterval = 55
     if (-not $script:StatusInfo.animate) { $frameInterval = 120 }
-    if ($script:Dragging) {
+    if ($script:Hidden) {
+        # Hidden: nothing to paint, just keep the event loop and the poll alive.
+        $script:LastFrame = $nowTick
+    } elseif ($script:Dragging) {
         # While the user drags, moving the window is the only thing that should
         # touch it: no re-render, no resize, no re-layer.
         $script:LastFrame = $nowTick
@@ -1331,6 +1410,7 @@ while ($script:Running) {
         $script:NeedsRender = $false
         $script:LastFrame = $nowTick
     }
+    if ($hideAt -gt 0 -and $nowTick -ge $hideAt) { $hideAt = 0; Hide-Widget }
     if ($exitAt -gt 0 -and $nowTick -ge $exitAt) { $script:Running = $false }
     Start-Sleep -Milliseconds 12
 }

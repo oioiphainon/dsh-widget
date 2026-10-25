@@ -54,6 +54,7 @@
     "reset": "重置位置",
     "autostart": "开机自启",
     "keepRunning": "DSH 退出后保留悬浮窗",
+    "hide": "隐藏悬浮窗",
     "alertSound": "审批提示音",
     "jobRunning": "进行中",
     "jobDone": "已完成",
