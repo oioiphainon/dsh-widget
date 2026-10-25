@@ -15,11 +15,11 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/danheng383-commits/dsh-widget.git"
+    "url": "git+https://github.com/oioiphainon/dsh-widget.git"
   },
-  "homepage": "https://github.com/danheng383-commits/dsh-widget#readme",
+  "homepage": "https://github.com/oioiphainon/dsh-widget#readme",
   "bugs": {
-    "url": "https://github.com/danheng383-commits/dsh-widget/issues"
+    "url": "https://github.com/oioiphainon/dsh-widget/issues"
   },
   "exports": {
     ".": "./index.js",
