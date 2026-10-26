@@ -13,6 +13,9 @@
 
     Dev flags:
       -SelfTest <dir>   render preview PNGs (collapsed/expanded, light/dark) then exit
+      -Movie <dir>      like SelfTest but renders ONE frame from the given state
+                        file (use -StatePath to point at it) as movie-frame.png,
+                        honoring widget.json's expanded flag; for offline video
       -ExitAfterMs <n>  quit after n milliseconds
       -StatePath        override the snapshot path
       -DataDir          override the config/pid directory
@@ -23,6 +26,7 @@ param(
     [string]$AssetPath = '',
     [string]$TextPath = '',
     [string]$SelfTest = '',
+    [string]$Movie = '',
     [int]$ExitAfterMs = 0,
     [int]$HideAfterMs = 0,
     [string]$AutostartTest = ''
@@ -232,7 +236,7 @@ if (-not $script:Sep) { $script:Sep = ' / ' }
 
 # -------------------------------------------------------------- single app ---
 $script:Mutex = New-Object System.Threading.Mutex($false, 'Local\DshFatFishDesktopWidget')
-if (-not $SelfTest -and -not $AutostartTest) {
+if (-not $SelfTest -and -not $AutostartTest -and -not $Movie) {
     if (-not $script:Mutex.WaitOne(0)) {
         # Another fish is already alive - it may be hidden (right-click -> hide).
         # Leave a request file instead of silently doing nothing, so launching the
@@ -1395,6 +1399,20 @@ function Save-Composite($canvas, [string]$path, [System.Drawing.Color]$bg) {
     $g.Dispose()
     $out.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
     $out.Dispose()
+}
+
+if ($Movie) {
+    if (-not (Test-Path -LiteralPath $Movie)) { New-Item -ItemType Directory -Path $Movie -Force | Out-Null }
+    Poll-State
+    if ($script:State -ne $null -and $script:State.lastApproval -ne $null) { Set-ApprovalToast $script:State.lastApproval }
+    $script:StatusInfo = Get-StatusInfo
+    # expanded comes from widget.json in the DataDir (Read-Config already ran)
+    Render-Frame
+    Save-Composite $script:Canvas (Join-Path $Movie 'movie-frame.png') ([System.Drawing.Color]::FromArgb(255, 238, 242, 248))
+    try { $script:Tray.Visible = $false } catch { }
+    try { $script:Tray.Dispose() } catch { }
+    $script:Fish.Dispose()
+    exit 0
 }
 
 if ($SelfTest) {
