@@ -1198,7 +1198,7 @@ function Update-MenuText {
     $script:MiAutostart.Checked = (Test-Autostart)
     $script:MiKeep.Text = [string]$script:S.labels.keepRunning
     $script:MiKeep.Checked = [bool]$script:KeepAfterExit
-    $script:MiHide.Text = [string]$script:S.labels.hide
+    if ($script:Hidden) { $script:MiHide.Text = [string]$script:S.labels.show } else { $script:MiHide.Text = [string]$script:S.labels.hide }
     $script:MiReset.Text = [string]$script:S.labels.reset
     $script:MiQuit.Text = [string]$script:S.labels.quit
 }
@@ -1212,8 +1212,11 @@ function Hide-Widget {
     # Runtime-only: the fish goes out of the way, but the process stays alive and
     # keeps polling, so the next launch request brings it straight back. Hiding is
     # deliberately not persisted - a hidden fish at the next login would look dead.
+    # The tray icon is the way back in: it survives the hide.
     $script:Hidden = $true
     try { $script:Form.Hide() } catch { }
+    Update-MenuText
+    Update-TrayTip
 }
 
 function Show-Widget {
@@ -1223,6 +1226,8 @@ function Show-Widget {
         $script:Form.Show()
         $script:Form.TopMost = $true
     } catch { }
+    Update-MenuText
+    Update-TrayTip
     $script:NeedsRender = $true
 }
 
@@ -1250,7 +1255,12 @@ $script:MiKeep.Add_Click({
         $script:KeepAfterExit = -not $script:KeepAfterExit
         Save-Config
     })
-$script:MiHide.Add_Click({ param($s, $e) Hide-Widget })
+$script:MiHide.Add_Click({
+        param($s, $e)
+        # Toggle: the same menu entry doubles as "show" while the card is hidden,
+        # which is what the tray menu shows when the fish is away.
+        if ($script:Hidden) { Show-Widget } else { Hide-Widget }
+    })
 $script:MiReset.Add_Click({
         param($s, $e)
         Get-DefaultPos
@@ -1259,6 +1269,54 @@ $script:MiReset.Add_Click({
         Save-Config
     })
 $script:MiQuit.Add_Click({ param($s, $e) $script:Running = $false })
+
+# ------------------------------------------------------------------- tray ---
+# A hidden fish is undiscoverable by design: no window, no taskbar entry, no way
+# to right-click it back. The tray icon is the recovery path - it stays for the
+# whole process lifetime, left-click toggles the card, and its right-click menu
+# is the same ContextMenuStrip as the card's, so every action stays reachable.
+$script:Tray = New-Object System.Windows.Forms.NotifyIcon
+$script:TrayIconBmp = $null
+try {
+    $traySize = [System.Windows.Forms.SystemInformation]::SmallIconSize
+    if ($traySize.Width -le 0) { $traySize = [System.Drawing.Size]::new(16, 16) }
+    $script:TrayIconBmp = New-Object System.Drawing.Bitmap($traySize.Width, $traySize.Height)
+    $tg = [System.Drawing.Graphics]::FromImage($script:TrayIconBmp)
+    $tg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $tg.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+    $tg.DrawImage($script:Fish, 0, 0, $traySize.Width, $traySize.Height)
+    $tg.Dispose()
+    $script:Tray.Icon = [System.Drawing.Icon]::FromHandle($script:TrayIconBmp.GetHicon())
+} catch { }
+$script:Tray.ContextMenuStrip = $script:Menu
+$script:Tray.Visible = $true
+function Update-TrayTip {
+    try {
+        $tip = [string]$script:S.labels.title
+        if ($script:Hidden) {
+            $tip = [string]$script:S.labels.trayHidden
+        } elseif ($script:StatusInfo -ne $null) {
+            $tip = ([string]$script:S.labels.title) + ' - ' + [string]$script:StatusInfo.status
+        }
+        if ($tip.Length -gt 63) { $tip = $tip.Substring(0, 63) }
+        $script:Tray.Text = $tip
+    } catch { }
+}
+$script:Tray.Add_MouseClick({
+        param($s, $e)
+        if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Left) { return }
+        if ($script:Hidden) { Show-Widget } else { Hide-Widget }
+    })
+Update-TrayTip
+# One-shot diagnostic (kept cheap and harmless): confirms at boot whether the
+# tray icon really got an HICON - the recovery path lives or dies here.
+try {
+    $trayOk = ($script:Tray.Icon -ne $null)
+    $trayTxt = if ($trayOk) { 'yes' } else { 'no' }
+    [System.IO.File]::AppendAllText((Join-Path $DataDir 'tray-probe.log'),
+        ("{0} pid={1} trayIcon={2} trayVisible={3} smallIcon={4}x{5}" -f [DateTimeOffset]::Now.ToString('s'), $PID, $trayTxt, $script:Tray.Visible, [System.Windows.Forms.SystemInformation]::SmallIconSize.Width, [System.Windows.Forms.SystemInformation]::SmallIconSize.Height) + [Environment]::NewLine)
+} catch { }
+
 
 # ------------------------------------------------------------------ events ---
 function Write-DragLog([string]$text) {
@@ -1355,6 +1413,10 @@ if ($SelfTest) {
     Render-Frame
     Save-Composite $script:Canvas (Join-Path $SelfTest 'expanded-light.png') ([System.Drawing.Color]::FromArgb(255, 238, 242, 248))
     Save-Composite $script:Canvas (Join-Path $SelfTest 'expanded-dark.png') ([System.Drawing.Color]::FromArgb(255, 32, 39, 51))
+    # The tray icon was created above; the self-test exits before the main loop's
+    # cleanup, so remove it here or a ghost icon stays in the tray.
+    try { $script:Tray.Visible = $false } catch { }
+    try { $script:Tray.Dispose() } catch { }
     $script:Fish.Dispose()
     exit 0
 }
@@ -1377,6 +1439,7 @@ while ($script:Running) {
         Poll-State
         $script:LastPoll = $nowTick
         $script:StatusInfo = Get-StatusInfo
+        Update-TrayTip
         # A second launcher (desktop\launch-widget.vbs, or the Host relaunching
         # the widget) drops a request file when it cannot take the mutex; that is
         # how a hidden fish is asked to come back.
@@ -1415,6 +1478,9 @@ while ($script:Running) {
     Start-Sleep -Milliseconds 12
 }
 
+try { $script:Tray.Visible = $false } catch { }
+try { $script:Tray.Dispose() } catch { }
+try { if ($script:TrayIconBmp) { $script:TrayIconBmp.Dispose() } } catch { }
 try { $script:Form.Close() } catch { }
 try { $script:Mutex.ReleaseMutex() } catch { }
 try { if (Test-Path -LiteralPath $script:PidPath) { Remove-Item -LiteralPath $script:PidPath -Force } } catch { }

@@ -55,6 +55,8 @@
     "autostart": "开机自启",
     "keepRunning": "DSH 退出后保留悬浮窗",
     "hide": "隐藏悬浮窗",
+    "show": "显示悬浮窗",
+    "trayHidden": "大肥鱼已隐藏 - 左键点击恢复",
     "alertSound": "审批提示音",
     "jobRunning": "进行中",
     "jobDone": "已完成",

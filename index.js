@@ -23,7 +23,7 @@
  */
 
 const PROGRESS_PATH = '/api/fat-fish/progress'
-const PLUGIN_VERSION = '0.4.1'
+const PLUGIN_VERSION = '0.4.2'
 const API_VERSION = 1
 
 const MAX_SESSIONS = 12
