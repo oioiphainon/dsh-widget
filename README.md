@@ -3,6 +3,12 @@
 一只真正**悬浮在 Windows 桌面上**的鱼娘：始终置顶、透明背景、可拖拽，**实时显示当前
 DSH 会话的任务进度**。关掉 DSH 窗口（甚至整个 DSH 程序）之后，鱼还留在桌面上。
 
+> **快速安装**（Windows + DeepSeek Harness）：
+> ```powershell
+> dsh plugin --profile desktop add github:oioiphainon/dsh-widget
+> ```
+> 装完桌面右下角立刻出现一条大肥鱼🐟 · 其它装法见下方[安装](#安装)一节。
+
 - 🐟 **桌面级置顶**：独立的 WinForms 分层窗口（per-pixel alpha），浮在所有应用之上，
   不属于 DSH 窗口，所以窗口最小化/关闭都不会带走它。
 - 📊 **实时进度**：Host 每 0.8 秒把「最近活跃会话」的进度写成一个小 JSON，挂件读它，
@@ -132,16 +138,44 @@ Host 直接读这两类事件，**不拦截 `approval/request` 瀑布**（拦截
   ✓ / ✗ / —，这样你能知道刚才那一下点的是允许还是拒绝。
 - 卡片、角标随即消失；回合结束或 DSH 停止写入时也会自动清掉，不会留一个假的「等你审批」。
 
-## 安装插件
+## 安装
 
-用当前 profile 的 `plugin_manager` 安装本目录（`install_bundle`，target 为本目录绝对
-路径）。安装后 Host 半区会在 1.5 秒内自动拉起桌面挂件；DSH 重启后也会重新拉起（挂件
-自带单实例互斥锁，不会叠出两只鱼）。
+**环境要求**：Windows 10/11 + [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）。挂件是 PowerShell + WinForms 写的，系统自带，无需管理员权限；不联网、不上传任何数据。
 
-拉起动作走 `desktop\launch-widget.vbs`（`wscript` → `WScript.Shell.Run`）而不是直接
-`spawn`：Windows 上直接创建的子进程会留在 Host 的作业对象/沙箱里，Host 退出时被一起带走；
-经 ShellExecute 启动的进程归外壳所有，才能真的留在桌面上。这也是挂件能活过 DSH 关闭的
-关键一环。
+### 方式一：dsh 命令安装（推荐）
+
+```powershell
+dsh plugin --profile desktop add github:oioiphainon/dsh-widget
+```
+
+- `--profile desktop` 换成你实际用的 profile 名（不确定就先 `dsh profile list` 看一眼）。
+- 装完 DSH 会自动加载插件并在 1.5 秒内拉起挂件，桌面右下角出现一条大肥鱼；DSH 重启后也会自动拉起（挂件自带单实例互斥锁，不会叠出两只鱼）。
+- 想固定到最新版，可钉住 tag：`dsh plugin --profile desktop add github:oioiphainon/dsh-widget#v0.4.2`。
+
+### 方式二：插件市场（收录审核中）
+
+DSH 里装了 `dshmarket`（可视化插件市场）的话，等本仓库通过 awesome-dsh-plugin 收录后，直接在市场里搜「大肥鱼 / fat fish / dsh-widget」一键安装。
+
+### 方式三：本地目录（开发 / 离线）
+
+```powershell
+git clone https://github.com/oioiphainon/dsh-widget.git
+# 或者直接下载 zip 解压
+dsh plugin --profile desktop add D:\path\to\dsh-widget
+```
+
+也可以用当前 profile 的 `plugin_manager` 工具安装本目录（`install_bundle`，target 为目录绝对路径），效果相同。
+
+### 验证 & 卸载
+
+- **装好了吗**：桌面右下角出现鱼 + 气泡；任务栏托盘（可能在「^」溢出面板里）多了一条小鱼图标。
+- **手动拉起 / 找回**：双击插件目录下的 `desktop\launch-widget.vbs`。
+- **卸载**：`dsh plugin --profile desktop remove @local/dsh-fat-fish-widget`（或装法对应的包名），再右键鱼 → 退出即可；配置留在 `%LOCALAPPDATA%\dsh-fat-fish`，想清干净就一并删掉。
+
+> 为什么拉起要走 `desktop\launch-widget.vbs`（`wscript` → `WScript.Shell.Run`）而不是直接
+> `spawn`：Windows 上直接创建的子进程会留在 Host 的作业对象/沙箱里，Host 退出时被一起带走；
+> 经 ShellExecute 启动的进程归外壳所有，才能真的留在桌面上。这也是挂件能活过 DSH 关闭的
+> 关键一环。
 
 ## 排查
 
@@ -196,7 +230,10 @@ Windows PowerShell 5.1 会按 ANSI 解码导致乱码；`strings.json` 则以 UT
 
 ## 更新记录
 
-- **0.4.2**（当前）：系统托盘图标——隐藏后一键找回。
+- **README 安装一节重写**：补上 `dsh plugin add github:oioiphainon/dsh-widget` 一行装法、
+  插件市场（收录审核中）、本地/离线安装、验证与卸载；顶部简介加快速安装指引。此前只写了
+  本地开发目录装法，GitHub 访客不知道怎么装。
+- **0.4.2**：系统托盘图标——隐藏后一键找回。
   - 挂件常驻 Windows 系统托盘（小鱼图标，取自 `fish.png`）：**左键点击 = 显示/隐藏切换**，
     隐藏时悬停提示「大肥鱼已隐藏 - 左键点击恢复」；右键 = 与气泡相同的完整菜单。
   - 此前隐藏后只能靠再跑一次 `launch-widget.vbs`（或重开 DSH）恢复，入口太隐蔽——
