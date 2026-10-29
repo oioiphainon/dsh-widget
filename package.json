@@ -2,7 +2,7 @@
   "name": "@local/dsh-fat-fish-widget",
   "version": "0.4.2",
   "private": true,
-  "description": "大肥鱼桌面挂件:一只常驻 Windows 桌面的悬浮鱼娘,始终置顶显示当前会话的轮次、步骤、工具调用、todo、后台任务与团队任务;可自选开机自启与关闭 DSH 后是否保留。",
+  "description": "桌面工鱼（Desk Fish）:一只常驻 Windows 桌面的悬浮小鱼,始终置顶显示当前 DSH 会话的轮次、步骤、工具调用、todo、后台任务与团队任务;可自选开机自启、关闭 DSH 后是否保留,右键可隐藏/托盘一键找回。",
   "keywords": [
     "dsh",
     "dsh-plugin",

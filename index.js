@@ -1,5 +1,5 @@
 /**
- * Host half of the 大肥鱼 (fat fish) floating widget.
+ * Host half of the 桌面工鱼 (desk fish) floating widget.
  *
  * Collects live per-session task progress from the DSH Host and serves it on one
  * authenticated route of the host's `/api` channel:

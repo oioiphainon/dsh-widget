@@ -1,5 +1,5 @@
 /**
- * Client half of the 大肥鱼 task-progress floating widget.
+ * Client half of the 桌面工鱼 task-progress floating widget.
  *
  * Registers one entry in the frame-wide `shell.overlay` slot: a draggable mascot
  * (the user's fish-girl artwork) plus a speech bubble and an expandable panel
@@ -38,7 +38,7 @@ window.__ModuleLoader__.load({
 
     const DICT = {
       zh: {
-        title: '大肥鱼 · 任务进度',
+        title: '桌面工鱼 · 任务进度',
         connecting: '正在读取进度…',
         offline: '连不上进度接口，正在重试…',
         queued: '排队中…',
@@ -68,7 +68,7 @@ window.__ModuleLoader__.load({
         refresh: '刷新',
         size: '大小',
         reset: '重置位置',
-        tabHint: '点我展开大肥鱼',
+        tabHint: '点我展开桌面工鱼',
         swipeHint: '拖动可以移动我',
         doneToast: '搞定！',
         round: '第 {n} 轮',
